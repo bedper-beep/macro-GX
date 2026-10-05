@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My FPS</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { overflow: hidden; background: #000; font-family: monospace; }
+  canvas { display: block; }
+  #crosshair {
+    position: fixed; top: 50%; left: 50%;
+    width: 22px; height: 22px;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    z-index: 10;
+  }
+  #crosshair::before, #crosshair::after {
+    content: ''; position: absolute; background: #22d3ee;
+    box-shadow: 0 0 8px #22d3ee;
+  }
+  #crosshair::before { width: 22px; height: 2px; top: 10px; left: 0; }
+  #crosshair::after { width: 2px; height: 22px; top: 0; left: 10px; }
+  #hud {
+    position: fixed; bottom: 20px; left: 20px;
+    color: #22d3ee; font-size: 14px; letter-spacing: 2px;
+    text-shadow: 0 0 10px #22d3ee;
+    z-index: 10;
+  }
+  #hud2 {
+    position: fixed; bottom: 20px; right: 20px;
+    color: #22d3ee; font-size: 14px; letter-spacing: 2px;
+    text-shadow: 0 0 10px #22d3ee;
+    z-index: 10;
+  }
+  #start {
+    position: fixed; inset: 0;
+    background: rgba(2,7,19,.94);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    color: #22d3ee; z-index: 100;
+    cursor: pointer; letter-spacing: 3px;
+    font-family: monospace;
+  }
+  #start h1 { font-size: 42px; margin-bottom: 20px; text-shadow: 0 0 20px #22d3ee; }
+  #start p { font-size: 14px; opacity: .8; margin-top: 20px; }
+  #start .key { display: inline-block; border: 1px solid #22d3ee; padding: 2px 8px; margin: 0 3px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div id="crosshair"></div>
+<div id="hud">HP: 100</div>
+<div id="hud2">KILLS: 0</div>
+<div id="start">
+  <h1>MY FPS</h1>
+  <p>Click to lock mouse · <span class="key">W</span><span class="key">A</span><span class="key">S</span><span class="key">D</span> to move · <span class="key">CLICK</span> to shoot · <span class="key">ESC</span> to unlock</p>
+  <p style="margin-top:40px;opacity:.5;">— click anywhere to begin —</p>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { PointerLockControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/PointerLockControls.js';
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0a0f1e);
+scene.fog = new THREE.Fog(0x0a0f1e, 20, 120);
+
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 500);
+camera.position.set(0, 1.7, 5);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+const ambient = new THREE.AmbientLight(0x6688cc, 0.6);
+scene.add(ambient);
+
+const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+sun.position.set(20, 40, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.width = 1024;
+sun.shadow.mapSize.height = 1024;
+sun.shadow.camera.left = -60;
+sun.shadow.camera.right = 60;
+sun.shadow.camera.top = 60;
+sun.shadow.camera.bottom = -60;
+scene.add(sun);
+
+const floorGeo = new THREE.PlaneGeometry(200, 200);
+const floorMat = new THREE.MeshStandardMaterial({ color: 0x1a2438, roughness: 0.9 });
+const floor = new THREE.Mesh(floorGeo, floorMat);
+floor.rotation.x = -Math.PI / 2;
+floor.receiveShadow = true;
+scene.add(floor);
+
+const grid = new THREE.GridHelper(200, 100, 0x22d3ee, 0x1a3550);
+grid.material.opacity = 0.15;
+grid.material.transparent = true;
+grid.position.y = 0.01;
+scene.add(grid);
+
+const obstacles = [];
+function makeBox(x, y, z, w, h, d, color){
+  const geo = new THREE.BoxGeometry(w, h, d);
+  const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.7 });
+  const box = new THREE.Mesh(geo, mat);
+  box.position.set(x, y, z);
+  box.castShadow = true;
+  box.receiveShadow = true;
+  scene.add(box);
+  obstacles.push(box);
+  return box;
+}
+
+makeBox(0, 2, -40, 80, 4, 1, 0x2a3550);
+makeBox(0, 2,  40, 80, 4, 1, 0x2a3550);
+makeBox(-40, 2, 0, 1, 4, 80, 0x2a3550);
+makeBox( 40, 2, 0, 1, 4, 80, 0x2a3550);
+
+for (let i = 0; i < 15; i++){
+  const x = (Math.random() - 0.5) * 60;
+  const z = (Math.random() - 0.5) * 60;
+  const s = 1 + Math.random() * 2;
+  makeBox(x, s/2, z, s, s, s, 0x35507a);
+}
+
+const controls = new PointerLockControls(camera, document.body);
+const start = document.getElementById('start');
+start.addEventListener('click', () => controls.lock());
+controls.addEventListener('lock', () => { start.style.display = 'none'; });
+controls.addEventListener('unlock', () => { start.style.display = 'flex'; });
+
+const keys = {};
+document.addEventListener('keydown', e => keys[e.code] = true);
+document.addEventListener('keyup',   e => keys[e.code] = false);
+
+const velocity = new THREE.Vector3();
+const direction = new THREE.Vector3();
+const speed = 40;
+
+const gunGroup = new THREE.Group();
+
+const gunBody = new THREE.Mesh(
+  new THREE.BoxGeometry(0.12, 0.15, 0.7),
+  new THREE.MeshStandardMaterial({ color: 0x1a1a1a, metalness: 0.6, roughness: 0.4 })
+);
+gunGroup.add(gunBody);
+
+const gunBarrel = new THREE.Mesh(
+  new THREE.BoxGeometry(0.05, 0.05, 0.35),
+  new THREE.MeshStandardMaterial({ color: 0x0a0a0a, metalness: 0.8, roughness: 0.3 })
+);
+gunBarrel.position.set(0, 0.03, -0.5);
+gunGroup.add(gunBarrel);
+
+const gunGrip = new THREE.Mesh(
+  new THREE.BoxGeometry(0.08, 0.2, 0.12),
+  new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 })
+);
+gunGrip.position.set(0, -0.15, 0.15);
+gunGroup.add(gunGrip);
+
+gunGroup.position.set(0.25, -0.25, -0.5);
+gunGroup.rotation.y = -0.05;
+camera.add(gunGroup);
+scene.add(camera);
+
+const enemies = [];
+let kills = 0;
+const hud2 = document.getElementById('hud2');
+
+function spawnEnemy(){
+  const geo = new THREE.BoxGeometry(0.9, 1.8, 0.5);
+  const mat = new THREE.MeshStandardMaterial({ color: 0xff3355, emissive: 0x330011 });
+  const e = new THREE.Mesh(geo, mat);
+  const a = Math.random() * Math.PI * 2;
+  const r = 15 + Math.random() * 20;
+  e.position.set(Math.cos(a) * r, 0.9, Math.sin(a) * r);
+  e.castShadow = true;
+  e.userData = { hp: 3, speed: 1.5 + Math.random() * 1.5, alive: true };
+  scene.add(e);
+  enemies.push(e);
+}
+for (let i = 0; i < 6; i++) spawnEnemy();
+
+const raycaster = new THREE.Raycaster();
+
+function shoot(){
+  raycaster.setFromCamera(new THREE.Vector2(0, 0), camera);
+  const hits = raycaster.intersectObjects([...enemies, ...obstacles], false);
+  if (hits.length){
+    const target = hits[0].object;
+    if (target.userData && target.userData.alive){
+      target.userData.hp--;
+      target.material.emissive = new THREE.Color(0xffaa00);
+      setTimeout(() => {
+        if (target.userData) target.material.emissive = new THREE.Color(0x330011);
+      }, 80);
+      if (target.userData.hp <= 0){
+        target.userData.alive = false;
+        scene.remove(target);
+        const idx = enemies.indexOf(target);
+        if (idx > -1) enemies.splice(idx, 1);
+        kills++;
+        hud2.textContent = 'KILLS: ' + kills;
+        spawnEnemy();
+      }
+    }
+  }
+  gunGroup.position.z = -0.45;
+  gunGroup.rotation.x = 0.06;
+}
+
+document.addEventListener('mousedown', e => {
+  if (controls.isLocked) shoot();
+});
+
+const clock = new THREE.Clock();
+
+function animate(){
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.1);
+
+  velocity.x -= velocity.x * 8 * dt;
+  velocity.z -= velocity.z * 8 * dt;
+  direction.z = Number(keys['KeyW']) - Number(keys['KeyS']);
+  direction.x = Number(keys['KeyD']) - Number(keys['KeyA']);
+  direction.normalize();
+
+  if (keys['KeyW'] || keys['KeyS']) velocity.z -= direction.z * speed * dt;
+  if (keys['KeyA'] || keys['KeyD']) velocity.x -= direction.x * speed * dt;
+
+  controls.moveRight(-velocity.x * dt);
+  controls.moveForward(-velocity.z * dt);
+
+  const camPos = camera.position;
+  for (const o of obstacles){
+    const dx = camPos.x - o.position.x;
+    const dz = camPos.z - o.position.z;
+    const halfW = o.geometry.parameters.width / 2 + 0.4;
+    const halfD = o.geometry.parameters.depth / 2 + 0.4;
+    if (Math.abs(dx) < halfW && Math.abs(dz) < halfD){
+      const overlapX = halfW - Math.abs(dx);
+      const overlapZ = halfD - Math.abs(dz);
+      if (overlapX < overlapZ) camPos.x += Math.sign(dx) * overlapX;
+      else camPos.z += Math.sign(dz) * overlapZ;
+    }
+  }
+
+  for (const e of enemies){
+    const dir = new THREE.Vector3().subVectors(camera.position, e.position);
+    dir.y = 0;
+    const dist = dir.length();
+    if (dist > 2){
+      dir.normalize();
+      e.position.addScaledVector(dir, e.userData.speed * dt);
+    }
+    e.lookAt(camera.position.x, e.position.y, camera.position.z);
+  }
+
+  gunGroup.position.z += (-0.5 - gunGroup.position.z) * 8 * dt;
+  gunGroup.rotation.x += (0 - gunGroup.rotation.x) * 8 * dt;
+
+  gunGroup.position.x = 0.25 + Math.sin(performance.now() * 0.003) * 0.005;
+  gunGroup.position.y = -0.25 + Math.sin(performance.now() * 0.002) * 0.005;
+
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
